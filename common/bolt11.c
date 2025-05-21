@@ -374,64 +374,71 @@ static const char *decode_f(struct bolt11 *b11,
 	const u5 *orig_data = *data;
 	size_t orig_len = *field_len;
 	const char *err;
-
-	err = pull_uint(hu5, data, field_len, &version, 5);
+	
+	/* Read version but don't commit to hash yet */
+	err = pull_uint(NULL, &orig_data, &orig_len, &version, 5);
 	if (err)
-		return tal_fmt(b11, "f: %s", err);
+			return tal_fmt(b11, "f: %s", err);
 
-	/* BOLT #11:
-	 *
-	 * for Bitcoin payments... MUST set an `f` field to a valid
-	 * witness version and program, OR to `17` followed by a
-	 * public key hash, OR to `18` followed by a script hash.
-	*/
-	if (version == 17) {
-		/* Pay to pubkey hash (P2PKH) */
-		struct bitcoin_address *pkhash;
-		pkhash = pull_all(tmpctx, hu5, data, field_len, false, &err);
-		if (!pkhash)
-			return err;
-		if (tal_bytelen(pkhash) != sizeof(*pkhash))
-			return tal_fmt(b11, "f: pkhash length %zu",
-				       tal_bytelen(pkhash));
-		fallback = scriptpubkey_p2pkh(b11, pkhash);
-	} else if (version == 18) {
-		/* Pay to pubkey script hash (P2SH) */
-		struct ripemd160 *shash;
-		shash = pull_all(tmpctx, hu5, data, field_len, false, &err);
-		if (!shash)
-			return err;
-		if (tal_bytelen(shash) != sizeof(*shash))
-			return tal_fmt(b11, "f: p2sh length %zu",
-				       tal_bytelen(shash));
-		fallback = scriptpubkey_p2sh_hash(b11, shash);
-	} else if (version < 17) {
-		u8 *f = pull_all(tmpctx, hu5, data, field_len, false, &err);
-		if (!f)
-			return err;
-		if (version == 0) {
-			if (tal_count(f) != 20 && tal_count(f) != 32)
+	/* BOLT #11 handling for known versions */
+	if (version == 17 || version == 18 || version < 17) {
+		/* For known versions, process with hash */
+		err = pull_uint(hu5, data, field_len, &version, 5);
+		if (err)
+			return tal_fmt(b11, "f: %s", err);
+		
+		/* BOLT #11:
+		*
+		* for Bitcoin payments... MUST set an `f` field to a valid
+		* witness version and program, OR to `17` followed by a
+		* public key hash, OR to `18` followed by a script hash.
+		*/
+		if (version == 17) {
+			/* Pay to pubkey hash (P2PKH) */
+			struct bitcoin_address *pkhash;
+			pkhash = pull_all(tmpctx, hu5, data, field_len, false, &err);
+			if (!pkhash)
+				return err;
+			if (tal_bytelen(pkhash) != sizeof(*pkhash))
+				return tal_fmt(b11, "f: pkhash length %zu",
+					       tal_bytelen(pkhash));
+			fallback = scriptpubkey_p2pkh(b11, pkhash);
+		} else if (version == 18) {
+			/* Pay to pubkey script hash (P2SH) */
+			struct ripemd160 *shash;
+			shash = pull_all(tmpctx, hu5, data, field_len, false, &err);
+			if (!shash)
+				return err;
+			if (tal_bytelen(shash) != sizeof(*shash))
+				return tal_fmt(b11, "f: p2sh length %zu",
+					       tal_bytelen(shash));
+			fallback = scriptpubkey_p2sh_hash(b11, shash);
+		} else if (version < 17) {
+			u8 *f = pull_all(tmpctx, hu5, data, field_len, false, &err);
+			if (!f)
+				return err;
+			if (version == 0) {
+				if (tal_count(f) != 20 && tal_count(f) != 32)
+					return tal_fmt(b11,
+						       "f: witness v0 bad length %zu",
+						       tal_count(f));
+			}
+			if (version == 1 && tal_count(f) != 32) {
 				return tal_fmt(b11,
-					       "f: witness v0 bad length %zu",
+					       "f: witness v1 bad length %zu",
 					       tal_count(f));
+			}
+			if (tal_count(f) > 40 || tal_count(f) < 2) {
+				return tal_fmt(b11,
+					       "f: witness v%"PRIu64" bad length %zu",
+					       version,
+					       tal_count(f));
+			}
+			fallback = scriptpubkey_witness_raw(b11, version,
+							    f, tal_count(f));
 		}
-		if (version == 1 && tal_count(f) != 32) {
-			return tal_fmt(b11,
-				       "f: witness v1 bad length %zu",
-				       tal_count(f));
-		}
-		if (tal_count(f) > 40 || tal_count(f) < 2) {
-			return tal_fmt(b11,
-				       "f: witness v%"PRIu64" bad length %zu",
-				       version,
-				       tal_count(f));
-		}
-		fallback = scriptpubkey_witness_raw(b11, version,
-						    f, tal_count(f));
 	} else {
-		/* Restore version for unknown field! */
-		*data = orig_data;
-		*field_len = orig_len;
+		 /* For unknown versions, handle with our unknown field processor */
 		return unknown_field(b11, hu5, data, field_len, 'f');
 	}
 

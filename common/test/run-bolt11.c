@@ -81,6 +81,15 @@ static void test_b11(const char *b11str,
 	assert(b11->expiry == expect_b11->expiry);
 	assert(b11->min_final_cltv_expiry == expect_b11->min_final_cltv_expiry);
 
+	if (b11->fallbacks) {
+    for (size_t i = 0; i < tal_count(b11->fallbacks); i++) {
+        const u8 *fallback = b11->fallbacks[i];
+        char *hex = tal_hexstr(NULL, fallback, tal_bytelen(fallback));
+        printf("Fallback[%zu]: %s (length: %zu bytes)\n", i, hex, tal_bytelen(fallback));
+        tal_free(hex);
+    }
+}
+
 	assert(tal_count(b11->fallbacks) == tal_count(expect_b11->fallbacks));
 	for (size_t i = 0; i < tal_count(b11->fallbacks); i++)
 		assert(memeq(b11->fallbacks[i], tal_count(b11->fallbacks[i]),
@@ -107,6 +116,17 @@ static void test_b11(const char *b11str,
 	expect_extra = list_top(&expect_b11->extra_fields, struct bolt11_field,
 				list);
 	list_for_each(&b11->extra_fields, b11_extra, list) {
+		printf("\n");
+		printf("Expect tag: %c ->", expect_extra->tag);
+		for (size_t i = 0; i < tal_count(expect_extra->data); i++) {
+			printf("%02x", expect_extra->data[i]);
+		}
+		printf("\n");
+		printf("Extra tag: %c ->", b11_extra->tag);
+		for (size_t i = 0; i < tal_count(b11_extra->data); i++) {
+			printf("%02x", b11_extra->data[i]);
+		}
+		printf("\n");
 		assert(expect_extra->tag == b11_extra->tag);
 		assert(tal_arr_eq(expect_extra->data, b11_extra->data));
 		expect_extra = list_next(&expect_b11->extra_fields,
@@ -114,8 +134,11 @@ static void test_b11(const char *b11str,
 	}
 	assert(!expect_extra);
 
+	printf("worked: %s\n", b11str);
+
 	/* Re-encode to check */
 	reproduce = bolt11_encode(tmpctx, b11, false, test_sign, NULL);
+	printf("reproduce: %s\n", reproduce);
 	for (size_t i = 0; i < strlen(reproduce); i++) {
 		if (reproduce[i] != b11str[i]
 		    && reproduce[i] != tolower(b11str[i]))
@@ -735,6 +758,51 @@ int main(int argc, char *argv[])
 	/* Invalid route pubkey. */
 	assert(!bolt11_decode(tmpctx, "lnbc1qqygh9qpp50qzxqqqqqpqqrzjcqqqqqqqqqqqqqqqqqqqqqqqqqqcqpjqqqqqqrzjcqqqqqcqpjqqqqqqqqqqqqqqqqqqqqqqqqqcq9qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqdqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqlqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqlqqqqqqqqqqqqqqqqqqqqqqq4murj7", NULL, NULL, NULL, &fail));
 	assert(streq(fail, "r: hop 0 pubkey invalid"));
+
+	if (!node_id_from_hexstr("03027be81b41bdfda1ded1f4e0dd5a997635ad325a6e119f414a92fe78c86a45cf", strlen("03027be81b41bdfda1ded1f4e0dd5a997635ad325a6e119f414a92fe78c86a45cf"), &node))
+		abort();
+	b11 = new_bolt11(tmpctx, NULL);
+	b11->chain = chainparams_for_network("bitcoin");
+	b11->timestamp = 8;
+	b11->payment_secret = NULL;
+	b11->receiver_id = node;
+	b11->description = "";
+	b11->features = tal_arr(b11, u8, 0);
+	b11->fallbacks = tal_arr(b11, const u8 *, 1);
+	b11->fallbacks[0] = tal_hexdata(NULL, "76a914a00000000000000000000000000000000000000088ac", strlen("76a914a00000000000000000000000000000000000000088ac"));
+	if (!hex_decode("878460000000000000000000d000000000000000000000000001c00014000000",
+			strlen("878460000000000000000000d000000000000000000000000001c00014000000"),
+			&b11->payment_hash, sizeof(b11->payment_hash)))
+		abort();
+	list_head_init(&b11->extra_fields);
+	extra = tal(b11, struct bolt11_field);
+	extra->tag = 'f';
+	extra->data = tal_arr(extra, u5, 5);
+	for (size_t i = 0; i < 5; i++)
+		extra->data[i] = bech32_charset_rev[(u5)"5xw7t"[i]];
+	list_add(&b11->extra_fields, &extra->list);
+	extra = tal(b11, struct bolt11_field);
+
+	// First 's' entry
+	extra->tag = 's';
+	extra->data = tal_arr(extra, u5, 0);
+	list_add(&b11->extra_fields, &extra->list);
+
+	// Second 's' entry
+	extra = tal(b11, struct bolt11_field);
+	extra->tag = 's';
+	extra->data = tal_arr(extra, u5, 0);
+	list_add(&b11->extra_fields, &extra->list);
+
+	// Third 's' entry
+	extra = tal(b11, struct bolt11_field);
+	extra->tag = 's';
+	extra->data = tal_arr(extra, u5, 0);
+	list_add(&b11->extra_fields, &extra->list);
+
+	dev_bolt11_omit_c_value = true;
+	test_b11("lnbc1qqqqqqg9qqsqqsqqsqqdqqpp5s7zxqqqqqqqqqqqqqqqdqqqqqqqqqqqqqqqqqqqqq8qqq9qqqqqqfq95xw7tfpp35qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqcqpjqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqyqyqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq5s846z", b11, NULL);
+	dev_bolt11_omit_c_value = false;
 
 	/* FIXME: Test the others! */
 	common_shutdown();
