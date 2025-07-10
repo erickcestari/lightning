@@ -136,6 +136,27 @@ int main(int argc, char *argv[])
 
 	common_setup(argv[0]);
 
+	 struct bolt11 *invoice  = bolt11_decode(tmpctx, "lnbc1qqqqqqg9qqsqqsqqsqqdqqpp5s7zxqqqqqqqqqqqqqqqdqqqqqqqqqqqqqqqqqqqqq8qqq9qqqqqqfq95xw7tfpp35qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqcqpjqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqyqyqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq5s846z", NULL, NULL, NULL, &fail);
+	struct pubkey key;
+	printf("%s",fail);
+	if(!invoice) {
+		printf("invoice is null");
+	}
+	printf("%lu", invoice->expiry);
+
+	assert(pubkey_from_node_id(&key, &invoice->receiver_id));
+
+	uint8_t compressed[33];
+	pubkey_to_der(compressed, &key);
+
+	 char hex_output[100]; // Make sure it's large enough
+
+	if (hex_encode(compressed, sizeof(compressed), hex_output, sizeof(hex_output))) {
+		printf("Hex: %s\n", hex_output);
+	} else {
+		fprintf(stderr, "Buffer too small for hex encoding.\n");
+	}
+
 	/* BOLT #11:
 	 *
 	 * # Examples
