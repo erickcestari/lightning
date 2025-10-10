@@ -6,6 +6,7 @@
 #include <common/msg_queue.h>
 #include <common/utils.h>
 #include <wire/wire.h>
+#include <stdio.h>
 
 static bool warned_once;
 
@@ -67,6 +68,10 @@ static void do_enqueue(struct msg_queue *q, const u8 *add TAKES)
 		/* Can cause re-entry, so set flag first! */
 		warned_once = true;
 		send_backtrace("excessive queue length");
+	}
+
+	if (msg_queue_length(q) % 10000 == 0) {
+		printf("msg_queue length: %zu\n", msg_queue_length(q));
 	}
 
 	/* In case someone is waiting */
