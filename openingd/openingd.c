@@ -31,6 +31,7 @@
 #include <openingd/openingd_wiregen.h>
 #include <wire/peer_wire.h>
 #include <wire/wire_sync.h>
+#include <stdio.h>
 
 /* stdin == lightningd, 3 == peer, 4 = hsmd */
 #define REQ_FD STDIN_FILENO
@@ -1010,6 +1011,8 @@ static u8 *fundee_channel(struct state *state, const u8 *open_channel_msg)
 		return NULL;
 	}
 
+	printf("Got offer\n");
+
 	/* Check with lightningd that we can accept this?  In particular,
 	 * if we have an existing channel, we don't support it. */
 	msg = towire_openingd_got_offer(NULL,
@@ -1043,6 +1046,8 @@ static u8 *fundee_channel(struct state *state, const u8 *open_channel_msg)
 		tal_free(err_reason);
 		return NULL;
 	}
+
+	printf("Lightningd accepted offer\n");
 
 	/* BOLT #2:
 	 * The receiving node MUST fail the channel if:
@@ -1099,6 +1104,8 @@ static u8 *fundee_channel(struct state *state, const u8 *open_channel_msg)
 
 	peer_billboard(false,
 		       "Incoming channel: accepted, now waiting for them to create funding tx");
+
+	printf("Incoming channel: accepted, now waiting for them to create funding tx\n");
 
 	/* This is a loop which handles gossip until we get a non-gossip msg */
 	msg = opening_negotiate_msg(tmpctx, state, NULL);
