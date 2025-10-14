@@ -1487,6 +1487,7 @@ int main(int argc, char *argv[])
 		= state->upfront_shutdown_script[REMOTE]
 		= NULL;
 
+	printf("Setting up initial per-commitment point\n");
 	/*~ We need an initial per-commitment point whether we're funding or
 	 * they are, and lightningd has reserved a unique dbid for us already,
 	 * so we might as well get the hsm daemon to generate it now. */
