@@ -426,6 +426,16 @@ struct onion_payload *onion_decode(const tal_t *ctx,
 					     p->tlv->short_channel_id);
 		p->total_msat = NULL;
 	} else {
+		/* BOLT #4:
+		 * - If it is the final node:
+		 *   - MUST return an error if:
+     * 	   - `short_channel_id` is present. */
+		if (p->tlv->short_channel_id) {
+			if (explanation)
+				*explanation = tal_fmt(ctx, "short_channel_id is present in final node");
+			*failtlvtype = TLV_PAYLOAD_SHORT_CHANNEL_ID;
+			goto field_bad;
+		}
 		p->forward_channel = NULL;
 		/* BOLT #4:
 		 * - If it is the final node:
